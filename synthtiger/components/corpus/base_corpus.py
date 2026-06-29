@@ -22,6 +22,9 @@ class BaseCorpus(Component):
         max_length=None,
         charset=None,
         textcase=None,
+        sampling="random",
+        shard_index=0,
+        num_shards=1,
     ):
         super().__init__()
         self.paths = paths
@@ -30,10 +33,21 @@ class BaseCorpus(Component):
         self.max_length = max_length
         self.charset = charset
         self.textcase = textcase
+        self.sampling = sampling
+        self.shard_index = int(shard_index)
+        self.num_shards = int(num_shards)
+        if self.num_shards < 1:
+            raise RuntimeError("num_shards must be >= 1")
+        if self.shard_index < 0 or self.shard_index >= self.num_shards:
+            raise RuntimeError(
+                "shard_index must satisfy 0 <= shard_index < num_shards"
+            )
         self._contents = []
         self._offsets = []
         self._counts = []
         self._probs = np.array(self.weights) / sum(self.weights)
+        self._sample_orders = []
+        self._sample_cursors = []
         self._charset = set()
         self._update_charset()
         self._update_contents()
@@ -81,7 +95,13 @@ class BaseCorpus(Component):
             offsets.write(offset.to_bytes(4, sys.byteorder, signed=False))
 
             with open(path, "r", encoding="utf-8") as fp:
-                for text in fp:
+                for line_idx, text in enumerate(fp):
+                    if (
+                        self.num_shards > 1
+                        and line_idx % self.num_shards != self.shard_index
+                    ):
+                        continue
+
                     text = text.strip("\r\n")
 
                     if not self._check_length(text):
@@ -100,6 +120,8 @@ class BaseCorpus(Component):
 
             contents.close()
             offsets.close()
+
+        self._update_sampling_orders()
 
     def _check_length(self, text):
         if self.min_length is not None and len(text) < self.min_length:
@@ -120,12 +142,46 @@ class BaseCorpus(Component):
         text = self._contents[key][start:end]
         return text
 
-    def _sample_text(self):
+    def _update_sampling_orders(self):
+        self._sample_orders = []
+        self._sample_cursors = []
+
+        for count in self._counts:
+            if count > 0:
+                order = np.random.permutation(count)
+            else:
+                order = np.empty(0, dtype=np.int64)
+            self._sample_orders.append(order)
+            self._sample_cursors.append(0)
+
+    def _sample_key(self):
         key = np.random.choice(len(self.paths), p=self._probs)
+        return key
+
+    def _sample_idx(self, key):
+        if self.sampling == "random":
+            return np.random.randint(self._counts[key])
+
+        if self.sampling != "balanced":
+            raise RuntimeError(
+                f"Unknown sampling mode: {self.sampling}. Use 'random' or 'balanced'."
+            )
+
+        cursor = self._sample_cursors[key]
+        if cursor >= self._counts[key]:
+            self._sample_orders[key] = np.random.permutation(self._counts[key])
+            cursor = 0
+
+        idx = int(self._sample_orders[key][cursor])
+        self._sample_cursors[key] = cursor + 1
+        return idx
+
+    def _sample_text(self):
+        key = self._sample_key()
         if self._counts[key] == 0:
             raise RuntimeError(f"There is no text: {self.paths[key]}")
 
-        idx = np.random.randint(self._counts[key])
+        idx = self._sample_idx(key)
         text = self._get_text(key, idx)
         return text
 

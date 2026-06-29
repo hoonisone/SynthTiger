@@ -34,6 +34,7 @@ MANIFEST
 *.manifest
 *.spec
 
+
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
@@ -105,3 +106,8 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+datasets/
+output/*
+SynthText/
+debug/

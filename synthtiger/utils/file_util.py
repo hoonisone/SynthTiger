@@ -10,7 +10,9 @@ import os
 def search_files(root, names=None, exts=None):
     paths = []
 
-    for dir_path, _, file_names in os.walk(root):
+    for dir_path, dir_names, file_names in os.walk(root):
+        dir_names.sort()
+        file_names.sort()
         for file_name in file_names:
             file_path = os.path.join(dir_path, file_name)
             file_ext = os.path.splitext(file_name)[1]
@@ -22,6 +24,7 @@ def search_files(root, names=None, exts=None):
 
             paths.append(file_path)
 
+    paths.sort()
     return paths
 
 

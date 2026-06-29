@@ -1,0 +1,14 @@
+GPU_ID=$1
+CONTAINER_NAME="mh_synthtiger_gpu${GPU_ID}"
+
+docker run -it --shm-size=64gb \
+    -v /data2/hoonisone2/projects/synthtiger:/home \
+    -w /home \
+    --gpus "device=${GPU_ID}" \
+    -m 128g \
+    --memory-swap 128g \
+    --cpus=30 \
+    --cpu-shares=256 \
+    --name "${CONTAINER_NAME}" \
+    python:3.10-slim-bullseye \
+    /bin/bash

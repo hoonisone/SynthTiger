@@ -1,0 +1,2 @@
+synthtiger -v -o /home/datasets/STR/AIHub_STR_v1.2___synth/horizontal_train -w 30 -s 42  /home/examples/synthtiger/template.py   SynthTiger   /home/examples/synthtiger/config_horizontal.yaml
+synthtiger -v -o /home/datasets/STR/AIHub_STR_v1.2___synth/vertical_train -w 30 -s 42  /home/examples/synthtiger/template.py   SynthTiger   /home/examples/synthtiger/config_vertical.yaml

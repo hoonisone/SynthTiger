@@ -1,0 +1,2 @@
+GPU_ID=$1
+docker rm "mh_openocr_gch_gpu${GPU_ID}"

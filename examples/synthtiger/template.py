@@ -37,7 +37,11 @@ class SynthTiger(templates.Template):
         self.mask_output = config.get("mask_output", True)
         self.glyph_coord_output = config.get("glyph_coord_output", True)
         self.glyph_mask_output = config.get("glyph_mask_output", True)
+        self.annotation_output = config.get("annotation_output", True)
         self.vertical = config.get("vertical", False)
+        self.max_attempts_per_label = int(config.get("max_attempts_per_label", 5))
+        if self.max_attempts_per_label < 1:
+            raise RuntimeError("max_attempts_per_label must be >= 1")
         self.quality = config.get("quality", [95, 95])
         self.visibility_check = config.get("visibility_check", False)
         self.midground = config.get("midground", 0)
@@ -105,13 +109,26 @@ class SynthTiger(templates.Template):
             **config.get("postprocess", {}),
         )
 
-    def generate(self):
+    def generate(self, retry_context=None):
+        if retry_context is None:
+            retry_context = {}
+
         quality = np.random.randint(self.quality[0], self.quality[1] + 1)
         midground = np.random.rand() < self.midground
         fg_color, fg_style, mg_color, mg_style, bg_color = self._generate_color()
+        label_attempt = retry_context.get("label_attempt", 0)
+        label = retry_context.get("fixed_label")
+        if label is not None:
+            retry_context["label_attempt"] = label_attempt + 1
+        else:
+            if label_attempt >= self.max_attempts_per_label:
+                label_attempt = 0
+            label = self.corpus.data(self.corpus.sample())
+            retry_context["fixed_label"] = label
+            retry_context["label_attempt"] = label_attempt + 1
 
         fg_image, label, bboxes, glyph_fg_image, glyph_bboxes = self._generate_text(
-            fg_color, fg_style
+            fg_color, fg_style, label
         )
         bg_image = self._generate_background(fg_image.shape[:2][::-1], bg_color)
 
@@ -144,10 +161,11 @@ class SynthTiger(templates.Template):
         coords_path = os.path.join(root, "coords.txt")
         glyph_coords_path = os.path.join(root, "glyph_coords.txt")
 
-        self.gt_file = open(gt_path, "w", encoding="utf-8")
-        if self.coord_output:
+        if self.annotation_output:
+            self.gt_file = open(gt_path, "w", encoding="utf-8")
+        if self.annotation_output and self.coord_output:
             self.coords_file = open(coords_path, "w", encoding="utf-8")
-        if self.glyph_coord_output:
+        if self.annotation_output and self.glyph_coord_output:
             self.glyph_coords_file = open(glyph_coords_path, "w", encoding="utf-8")
 
     def save(self, root, data, idx):
@@ -163,17 +181,7 @@ class SynthTiger(templates.Template):
         mask = Image.fromarray(mask.astype(np.uint8))
         glyph_mask = Image.fromarray(glyph_mask.astype(np.uint8))
 
-        coords = [[x, y, x + w, y + h] for x, y, w, h in bboxes]
-        coords = "\t".join([",".join(map(str, map(int, coord))) for coord in coords])
-        glyph_coords = [[x, y, x + w, y + h] for x, y, w, h in glyph_bboxes]
-        glyph_coords = "\t".join(
-            [",".join(map(str, map(int, coord))) for coord in glyph_coords]
-        )
-
-        shard = str(idx // 10000)
-        image_key = os.path.join("images", shard, f"{idx}.jpg")
-        mask_key = os.path.join("masks", shard, f"{idx}.png")
-        glyph_mask_key = os.path.join("glyph_masks", shard, f"{idx}.png")
+        image_key, mask_key, glyph_mask_key = self._make_output_keys(idx)
         image_path = os.path.join(root, image_key)
         mask_path = os.path.join(root, mask_key)
         glyph_mask_path = os.path.join(root, glyph_mask_key)
@@ -187,6 +195,17 @@ class SynthTiger(templates.Template):
             os.makedirs(os.path.dirname(glyph_mask_path), exist_ok=True)
             glyph_mask.save(glyph_mask_path)
 
+        if self.annotation_output:
+            self.save_annotations(root, data, idx)
+
+    def save_annotations(self, root, data, idx):
+        del root
+        image_key, _, _ = self._make_output_keys(idx)
+        label = data["label"]
+        bboxes = data["bboxes"]
+        glyph_bboxes = data["glyph_bboxes"]
+        coords, glyph_coords = self._build_coord_strings(bboxes, glyph_bboxes)
+
         self.gt_file.write(f"{image_key}\t{label}\n")
         if self.coord_output:
             self.coords_file.write(f"{image_key}\t{coords}\n")
@@ -194,11 +213,28 @@ class SynthTiger(templates.Template):
             self.glyph_coords_file.write(f"{image_key}\t{glyph_coords}\n")
 
     def end_save(self, root):
-        self.gt_file.close()
-        if self.coord_output:
+        if self.annotation_output:
+            self.gt_file.close()
+        if self.annotation_output and self.coord_output:
             self.coords_file.close()
-        if self.glyph_coord_output:
+        if self.annotation_output and self.glyph_coord_output:
             self.glyph_coords_file.close()
+
+    def _make_output_keys(self, idx):
+        shard = str(idx // 10000)
+        image_key = os.path.join("images", shard, f"{idx}.jpg")
+        mask_key = os.path.join("masks", shard, f"{idx}.png")
+        glyph_mask_key = os.path.join("glyph_masks", shard, f"{idx}.png")
+        return image_key, mask_key, glyph_mask_key
+
+    def _build_coord_strings(self, bboxes, glyph_bboxes):
+        coords = [[x, y, x + w, y + h] for x, y, w, h in bboxes]
+        coords = "\t".join([",".join(map(str, map(int, coord))) for coord in coords])
+        glyph_coords = [[x, y, x + w, y + h] for x, y, w, h in glyph_bboxes]
+        glyph_coords = "\t".join(
+            [",".join(map(str, map(int, coord))) for coord in glyph_coords]
+        )
+        return coords, glyph_coords
 
     def _generate_color(self):
         mg_color = self.color.sample()
@@ -213,8 +249,9 @@ class SynthTiger(templates.Template):
 
         return fg_color, fg_style, mg_color, mg_style, bg_color
 
-    def _generate_text(self, color, style):
-        label = self.corpus.data(self.corpus.sample())
+    def _generate_text(self, color, style, label=None):
+        if label is None:
+            label = self.corpus.data(self.corpus.sample())
 
         # for script using diacritic, ligature and RTL
         chars = utils.split_text(label, reorder=True)

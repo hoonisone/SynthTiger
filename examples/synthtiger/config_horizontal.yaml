@@ -1,7 +1,7 @@
-coord_output: true
-mask_output: true
-glyph_coord_output: true
-glyph_mask_output: true
+coord_output: false
+mask_output: false
+glyph_coord_output: false
+glyph_mask_output: false
 
 vertical: false
 quality: [50, 95]
@@ -16,8 +16,9 @@ corpus:
   weights: [1, 0]
   args:
     # length augmentable corpus
-    - paths: [resources/corpus/mjsynth.txt, resources/corpus/synthtext.txt]
-      weights: [1, 1]
+    - paths: [/home/datasets/STR/AIHub_STR_v1.2/1_origin/corpus/horizontal_corpus.txt]
+      weights: [1]
+      sampling: balanced
       min_length: 1
       max_length: 25
       textcase: [lower, upper, capitalize]
@@ -30,13 +31,13 @@ corpus:
       max_length: 25
       textcase: [lower, upper, capitalize]
       augmentation: 0
-      augmentation_charset: resources/charset/alphanum_special.txt
+      augmentation_charset: resources/charset/korean_full.txt
 
 font:
-  paths: [resources/font]
+  paths: [./resources/font/korean]
   weights: [1]
   size: [40, 80]
-  bold: 0.5
+  bold: 0
 
 texture:
   prob: 0.5

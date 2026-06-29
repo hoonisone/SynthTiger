@@ -21,10 +21,23 @@ class CharAugmentableCorpus(BaseCorpus):
         max_length=None,
         charset=None,
         textcase=None,
+        sampling="random",
+        shard_index=0,
+        num_shards=1,
         augmentation=0,
         augmentation_charset=None,
     ):
-        super().__init__(paths, weights, min_length, max_length, charset, textcase)
+        super().__init__(
+            paths,
+            weights,
+            min_length,
+            max_length,
+            charset,
+            textcase,
+            sampling=sampling,
+            shard_index=shard_index,
+            num_shards=num_shards,
+        )
         self.augmentation = augmentation
         self.augmentation_charset = augmentation_charset
         self._augmentation_charset = set()
@@ -65,7 +78,7 @@ class CharAugmentableCorpus(BaseCorpus):
         if not augmentation:
             return super()._sample_text()
 
-        key = np.random.choice(len(self.paths), p=self._probs)
+        key = self._sample_key()
         if self._counts[key] == 0:
             raise RuntimeError(f"There is no text: {self.paths[key]}")
 

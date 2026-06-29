@@ -1,0 +1,2 @@
+GPU_ID=$1
+docker exec -it "mh_synthtiger_gpu${GPU_ID}" /bin/bash
